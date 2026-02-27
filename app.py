@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import csv
 import random
 from collections import Counter
@@ -6,7 +6,6 @@ from collections import Counter
 app = Flask(__name__)
 
 HISTORY_FILE = "539_history.csv"
-
 history = []
 
 def load_history():
@@ -18,14 +17,12 @@ def load_history():
 
 load_history()
 
-def analyze():
+def analyze(mode="stable"):
 
     counter = Counter()
     last_seen = {n: None for n in range(1, 40)}
-
     total_draws = len(history)
 
-    # 單次掃描（高效能）
     for idx, draw in enumerate(history):
         for num in draw:
             counter[num] += 1
@@ -42,28 +39,52 @@ def analyze():
             miss = total_draws - last_seen[n]
             counter[n] += miss * 0.2
 
-    hot = [n for n, _ in counter.most_common(5)]
-    cold = [n for n, _ in counter.most_common()[:-6:-1]]
-
     numbers = list(range(1, 40))
-    weights = [counter.get(n, 1) for n in numbers]
+
+    if mode == "aggressive":
+        weights = [counter[n] ** 1.5 for n in numbers]
+    elif mode == "cold":
+        weights = [(max(counter.values()) - counter[n] + 1) for n in numbers]
+    else:  # stable
+        weights = [counter[n] for n in numbers]
 
     selected = random.choices(numbers, weights=weights, k=5)
 
-    return sorted(list(set(selected)))[:5], hot, cold
+    total_weight = sum(weights)
+    probabilities = {
+        n: round((counter[n] / total_weight) * 100, 2)
+        for n in numbers
+    }
+
+    hot = [n for n, _ in counter.most_common(5)]
+    cold = [n for n, _ in counter.most_common()[:-6:-1]]
+
+    return sorted(list(set(selected)))[:5], hot, cold, probabilities
+
 
 @app.route("/generate")
 def generate():
-    nums, hot, cold = analyze()
+    mode = request.args.get("mode", "stable")
+    nums, hot, cold, prob = analyze(mode)
     return jsonify({
         "numbers": nums,
         "hot": hot,
-        "cold": cold
+        "cold": cold,
+        "probabilities": prob
     })
+
+
+@app.route("/history")
+def history_query():
+    period = request.args.get("period")
+    for row in history:
+        pass
+    return jsonify({"message": "history endpoint ready"})
+
 
 @app.route("/")
 def home():
-    return "539 Cloud AI Optimized Running"
+    return "539 Cloud AI Advanced Running"
 
 if __name__ == "__main__":
     app.run()
