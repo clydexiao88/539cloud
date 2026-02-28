@@ -23,16 +23,16 @@ def build_weights():
     total_draws = len(history)
 
     for idx, row in enumerate(history):
-        numbers = list(map(int, row[2:7]))
-        for num in numbers:
-            counter[num] += 1
-            last_seen[num] = idx
+        nums = list(map(int, row[2:7]))
+        for n in nums:
+            counter[n] += 1
+            last_seen[n] = idx
 
     # 最近50期加權
     for row in history[-50:]:
-        numbers = list(map(int, row[2:7]))
-        for num in numbers:
-            counter[num] += 2
+        nums = list(map(int, row[2:7]))
+        for n in nums:
+            counter[n] += 2
 
     # 遺漏值加權
     for n in range(1, 40):
@@ -52,15 +52,15 @@ def monte_carlo(counter, mode="stable"):
     else:
         weights = [counter[n] for n in numbers]
 
-    simulation_counter = Counter()
+    sim_counter = Counter()
 
     for _ in range(300):
         draw = random.choices(numbers, weights=weights, k=5)
         for n in draw:
-            simulation_counter[n] += 1
+            sim_counter[n] += 1
 
-    best = [n for n, _ in simulation_counter.most_common(5)]
-    return sorted(best), simulation_counter
+    best = [n for n, _ in sim_counter.most_common(5)]
+    return sorted(best), sim_counter
 
 @app.route("/generate")
 def generate():
@@ -76,13 +76,20 @@ def generate():
         for n in range(1, 40)
     }
 
+    # 全域熱門 / 冷門（統計層）
     hot = [n for n, _ in counter.most_common(5)]
     cold = [n for n, _ in counter.most_common()[:-6:-1]]
+
+    # 模式熱門 / 冷門（模擬層）
+    mode_hot = [n for n, _ in mc_counter.most_common(5)]
+    mode_cold = [n for n, _ in mc_counter.most_common()[:-6:-1]]
 
     return jsonify({
         "numbers": selected,
         "hot": hot,
         "cold": cold,
+        "mode_hot": mode_hot,
+        "mode_cold": mode_cold,
         "probabilities": probabilities,
         "mc_frequency": dict(mc_counter)
     })
@@ -106,9 +113,7 @@ def history_query():
 
 @app.route("/")
 def home():
-    return "539 Cloud AI Final Running"
+    return "539 Cloud AI Pro Dual Layer Running"
 
 if __name__ == "__main__":
     app.run()
-
-
