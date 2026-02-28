@@ -17,7 +17,7 @@ def load_history():
 
 load_history()
 
-def analyze(mode="stable"):
+def build_weights():
 
     counter = Counter()
     last_seen = {n: None for n in range(1, 40)}
@@ -33,11 +33,15 @@ def analyze(mode="stable"):
         for num in draw:
             counter[num] += 2
 
-    # 遺漏值加權
+    # 遺漏值
     for n in range(1, 40):
         if last_seen[n] is not None:
             miss = total_draws - last_seen[n]
             counter[n] += miss * 0.2
+
+    return counter
+
+def monte_carlo(counter, mode="stable"):
 
     numbers = list(range(1, 40))
 
@@ -45,46 +49,49 @@ def analyze(mode="stable"):
         weights = [counter[n] ** 1.5 for n in numbers]
     elif mode == "cold":
         weights = [(max(counter.values()) - counter[n] + 1) for n in numbers]
-    else:  # stable
+    else:
         weights = [counter[n] for n in numbers]
 
-    selected = random.choices(numbers, weights=weights, k=5)
+    simulation_counter = Counter()
 
-    total_weight = sum(weights)
+    # 🔥 200次模擬（安全值）
+    for _ in range(200):
+        draw = random.choices(numbers, weights=weights, k=5)
+        for n in draw:
+            simulation_counter[n] += 1
+
+    best = [n for n, _ in simulation_counter.most_common(5)]
+
+    return sorted(best)
+
+@app.route("/generate")
+def generate():
+
+    mode = request.args.get("mode", "stable")
+
+    counter = build_weights()
+
+    selected = monte_carlo(counter, mode)
+
+    total_weight = sum(counter.values())
     probabilities = {
         n: round((counter[n] / total_weight) * 100, 2)
-        for n in numbers
+        for n in range(1, 40)
     }
 
     hot = [n for n, _ in counter.most_common(5)]
     cold = [n for n, _ in counter.most_common()[:-6:-1]]
 
-    return sorted(list(set(selected)))[:5], hot, cold, probabilities
-
-
-@app.route("/generate")
-def generate():
-    mode = request.args.get("mode", "stable")
-    nums, hot, cold, prob = analyze(mode)
     return jsonify({
-        "numbers": nums,
+        "numbers": selected,
         "hot": hot,
         "cold": cold,
-        "probabilities": prob
+        "probabilities": probabilities
     })
-
-
-@app.route("/history")
-def history_query():
-    period = request.args.get("period")
-    for row in history:
-        pass
-    return jsonify({"message": "history endpoint ready"})
-
 
 @app.route("/")
 def home():
-    return "539 Cloud AI Advanced Running"
+    return "539 Cloud AI Monte Carlo Running"
 
 if __name__ == "__main__":
     app.run()
