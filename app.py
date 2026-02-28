@@ -105,12 +105,10 @@ def history_query():
     return jsonify({"error": "period not found"}), 404
 
 @app.route("/")
-@app.route("/test123")
-def test123():
-    return "history route loaded"
 def home():
     return "539 Cloud AI Final Running"
 
 if __name__ == "__main__":
     app.run()
+
 
