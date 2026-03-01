@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 import requests
+from bs4 import BeautifulSoup
 from collections import Counter
 import random
 
@@ -7,52 +8,46 @@ app = Flask(__name__)
 
 history = []
 
-TAIWAN_API = "https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Daily539Result"
+URL = "https://www.taiwanlottery.com/lotto/result/daily_cash"
 
-
-# ===============================
-# 抓最新開獎資料
-# ===============================
 def fetch_latest():
     global history
     try:
-        url = f"{TAIWAN_API}?period&startMonth=2025-01&endMonth=2026-12"
-        r = requests.get(url, timeout=10)
+        r = requests.get(URL, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        if r.status_code != 200:
-            print("API status error:", r.status_code)
-            return
-
-        data = r.json()
-
-        if "content" not in data:
-            print("API format error")
-            return
-
-        result_list = data["content"].get("daily539Res", [])
-
-        if not result_list:
-            print("No data returned")
-            return
+        rows = soup.select("table tbody tr")
 
         history.clear()
 
-        for item in result_list:
+        for row in rows:
+            cols = row.find_all("td")
+            if len(cols) < 7:
+                continue
+
+            period = cols[0].text.strip()
+            date = cols[1].text.strip()
+
+            numbers = [
+                int(cols[2].text.strip()),
+                int(cols[3].text.strip()),
+                int(cols[4].text.strip()),
+                int(cols[5].text.strip()),
+                int(cols[6].text.strip())
+            ]
+
             history.append({
-                "period": str(item["period"]),
-                "date": item["lotteryDate"][:10],
-                "numbers": item["drawNumberAppear"]
+                "period": period,
+                "date": date,
+                "numbers": numbers
             })
 
-        print("History updated:", len(history))
+        print("抓取成功:", len(history))
 
     except Exception as e:
-        print("Update failed:", e)
+        print("抓取失敗:", e)
 
 
-# ===============================
-# 計算熱度
-# ===============================
 def build_weights():
     counter = Counter()
     for row in history:
@@ -61,16 +56,12 @@ def build_weights():
     return counter
 
 
-# ===============================
-# 產生 AI 選號
-# ===============================
 @app.route("/generate")
 def generate():
 
     if not history:
         fetch_latest()
 
-    # 若抓不到資料 → fallback 隨機
     if not history:
         draw = sorted(random.sample(range(1, 40), 5))
         return jsonify({
@@ -81,14 +72,10 @@ def generate():
         })
 
     counter = build_weights()
-
     numbers = list(range(1, 40))
-
-    # 保證權重至少為 1
     weights = [counter[n] if counter[n] > 0 else 1 for n in numbers]
 
-    draw = random.choices(numbers, weights=weights, k=5)
-    draw = sorted(draw)
+    draw = sorted(random.choices(numbers, weights=weights, k=5))
 
     hot = [n for n, _ in counter.most_common(5)]
     cold = [n for n, _ in counter.most_common()[:-6:-1]]
@@ -101,9 +88,6 @@ def generate():
     })
 
 
-# ===============================
-# 歷史查詢
-# ===============================
 @app.route("/history")
 def history_query():
 
@@ -112,9 +96,6 @@ def history_query():
 
     period = request.args.get("period")
 
-    if not period:
-        return jsonify({"error": "please provide period"}), 400
-
     for row in history:
         if row["period"] == period:
             return jsonify(row)
@@ -122,24 +103,9 @@ def history_query():
     return jsonify({"error": "period not found"}), 404
 
 
-# ===============================
-# 手動強制更新
-# ===============================
-@app.route("/update")
-def update():
-    fetch_latest()
-    return jsonify({
-        "status": "updated",
-        "records": len(history)
-    })
-
-
-# ===============================
-# 首頁
-# ===============================
 @app.route("/")
 def home():
-    return "539來財 正式商用穩定版運行中"
+    return "539來財 穩定抓官網版運行中"
 
 
 if __name__ == "__main__":
