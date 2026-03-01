@@ -11,22 +11,23 @@ TAIWAN_API = "https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Daily539Result"
 
 def fetch_latest():
     global history
+    try:
+        url = f"{TAIWAN_API}?period&startMonth=2025-01&endMonth=2026-12"
+        r = requests.get(url, timeout=10)
 
-    url = f"{TAIWAN_API}?period&startMonth=2025-01&endMonth=2026-12"
-    r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            history.clear()
 
-    if r.status_code == 200:
-        data = r.json()
-        history.clear()
+            for item in data["content"]["daily539Res"]:
+                history.append({
+                    "period": str(item["period"]),
+                    "date": item["lotteryDate"][:10],
+                    "numbers": item["drawNumberAppear"]
+                })
+    except Exception as e:
+        print("Update failed:", e)
 
-        for item in data["content"]["daily539Res"]:
-            history.append({
-                "period": str(item["period"]),
-                "date": item["lotteryDate"][:10],
-                "numbers": item["drawNumberAppear"]
-            })
-
-fetch_latest()
 
 def build_weights():
     counter = Counter()
@@ -37,10 +38,12 @@ def build_weights():
 
     return counter
 
+
 @app.route("/generate")
 def generate():
 
-    fetch_latest()  # 每次呼叫都自動更新
+    if not history:
+        fetch_latest()
 
     counter = build_weights()
     numbers = list(range(1, 40))
@@ -58,10 +61,12 @@ def generate():
         "cold": cold
     })
 
+
 @app.route("/history")
 def history_query():
 
-    fetch_latest()  # 自動更新
+    if not history:
+        fetch_latest()
 
     period = request.args.get("period")
 
@@ -71,9 +76,11 @@ def history_query():
 
     return jsonify({"error": "period not found"}), 404
 
+
 @app.route("/")
 def home():
-    return "539來財 正式自動更新版運行中"
+    return "539來財 正式穩定自動更新版運行中"
+
 
 if __name__ == "__main__":
     app.run()
