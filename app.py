@@ -10,71 +10,92 @@ history = []
 
 
 # ===============================
-# 讀取本地歷史資料
+# 載入歷史資料
 # ===============================
 def load_history():
     global history
     history.clear()
 
-    try:
-        with open(HISTORY_FILE, newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            next(reader)  # 跳過標題
+    with open(HISTORY_FILE, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)
 
-            for row in reader:
-                history.append({
-                    "period": row[0],
-                    "date": row[1],
-                    "numbers": list(map(int, row[2:7]))
-                })
+        for row in reader:
+            history.append({
+                "period": row[0],
+                "date": row[1],
+                "numbers": list(map(int, row[2:7]))
+            })
 
-        print("歷史資料載入完成:", len(history))
-
-    except Exception as e:
-        print("讀取歷史資料失敗:", e)
+    print("載入完成:", len(history))
 
 
 load_history()
 
 
 # ===============================
-# 建立權重
+# 計算權重
 # ===============================
-def build_weights():
+def build_weights(last_n=None):
+
+    data = history[-last_n:] if last_n else history
+
     counter = Counter()
-    for row in history:
+
+    for row in data:
         for n in row["numbers"]:
             counter[n] += 1
+
     return counter
 
 
 # ===============================
-# AI 選號
+# AI 產生選號
 # ===============================
 @app.route("/generate")
 def generate():
 
+    mode = request.args.get("mode", "balanced")
+
     if not history:
-        return jsonify({
-            "numbers": [],
-            "hot": [],
-            "cold": [],
-            "error": "沒有歷史資料"
-        })
+        return jsonify({"error": "沒有歷史資料"}), 500
 
     counter = build_weights()
-    numbers = list(range(1, 40))
-    weights = [counter[n] if counter[n] > 0 else 1 for n in numbers]
 
-    draw = sorted(random.choices(numbers, weights=weights, k=5))
+    numbers = list(range(1, 40))
+
+    if mode == "aggressive":
+        weights = [counter[n] ** 1.5 for n in numbers]
+
+    elif mode == "cold":
+        max_val = max(counter.values())
+        weights = [(max_val - counter[n] + 1) for n in numbers]
+
+    else:  # balanced
+        weights = [counter[n] if counter[n] > 0 else 1 for n in numbers]
+
+    selected = sorted(random.choices(numbers, weights=weights, k=5))
+
+    total = sum(counter.values())
+
+    probabilities = {
+        n: round((counter[n] / total) * 100, 2)
+        for n in numbers
+    }
 
     hot = [n for n, _ in counter.most_common(5)]
     cold = [n for n, _ in counter.most_common()[:-6:-1]]
 
+    # 近50期統計
+    recent_counter = build_weights(last_n=50)
+
     return jsonify({
-        "numbers": draw,
+        "mode": mode,
+        "numbers": selected,
         "hot": hot,
-        "cold": cold
+        "cold": cold,
+        "probabilities": probabilities,
+        "recent_trend": dict(recent_counter)
     })
 
 
@@ -86,9 +107,6 @@ def history_query():
 
     period = request.args.get("period")
 
-    if not period:
-        return jsonify({"error": "請提供期數"}), 400
-
     for row in history:
         if row["period"] == period:
             return jsonify(row)
@@ -96,9 +114,6 @@ def history_query():
     return jsonify({"error": "查無此期數"}), 404
 
 
-# ===============================
-# 手動重新載入資料
-# ===============================
 @app.route("/reload")
 def reload_data():
     load_history()
@@ -110,7 +125,7 @@ def reload_data():
 
 @app.route("/")
 def home():
-    return "539來財 商業穩定版運行中"
+    return "539來財 Pro 分析版運行中"
 
 
 if __name__ == "__main__":
